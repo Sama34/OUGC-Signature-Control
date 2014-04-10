@@ -2,13 +2,13 @@
 
 /***************************************************************************
  *
- *   OUGC Signature Control plugin ()
+ *	OUGC Signature Control plugin (/inc/plugins/ougc_signcontrol.php)
  *	 Author: Omar Gonzalez
- *   Copyright: © 2012 Omar Gonzalez
+ *   Copyright: © 2012-2014 Omar Gonzalez
  *   
- *   Website: http://community.mybb.com/user-25096.html
+ *   Website: http://omarg.me
  *
- *   This plugin will add seven new options to extend users signature control in a group basis.
+ *   Manage signatures in group basis, to extend groups functionality.
  *
  ***************************************************************************
  
@@ -28,7 +28,7 @@
 ****************************************************************************/
 
 // Die if IN_MYBB is not defined, for security reasons.
-defined('IN_MYBB') or die('This file cannot be accessed directly.');
+defined('IN_MYBB') or die('Direct initialization of this file is not allowed.');
 
 // Run the hooks.
 if(defined('IN_ADMINCP'))
@@ -43,11 +43,12 @@ else
 	$plugins->add_hook('member_profile_end', 'ougc_signcontrol_profile');
 	$plugins->add_hook('postbit_pm', 'ougc_signcontrol_postbit');
 	$plugins->add_hook('postbit', 'ougc_signcontrol_postbit');
-	$plugins->add_hook('postbit_prev', 'ougc_signcontrol_postbit');
-	$plugins->add_hook('postbit_announcement', 'ougc_signcontrol_postbit');
+	# Apparently signatures aren't show in announcements or post previews... i may need a nap..
+	#$plugins->add_hook('postbit_prev', 'ougc_signcontrol_postbit');
+	#$plugins->add_hook('postbit_announcement', 'ougc_signcontrol_postbit');
 }
 
-//Necessary plugin information for the ACP plugin manager.
+// Plugin API
 function ougc_signcontrol_info()
 {
 	global $lang;
@@ -56,91 +57,184 @@ function ougc_signcontrol_info()
 	return array(
 		'name'			=> 'OUGC Signature Control',
 		'description'	=> $lang->ougc_signcontrol_plugin_desc,
-		'website'		=> 'http://udezain.com.ar/',
+		'website'		=> 'http://omarg.me',
 		'author'		=> 'Omar G.',
-		'authorsite'	=> 'http://udezain.com.ar/',
+		'authorsite'	=> 'http://omarg.me',
 		'version'		=> '1.2',
+		'versioncode'	=> 1200,
 		'compatibility'	=> '16*',
+		'guid'			=> ''
 	);
 }
 
-//Install the plugin.
+// _activate() routine
+function ougc_signcontrol_activate()
+{
+	global $db, $cache;
+
+	$fields = ougc_signcontrol_fields();
+	foreach($fields as $field => $definition)
+	{
+		if(!$db->field_exists($field, 'usergroups'))
+		{
+			$db->add_column('usergroups', $field, $definition);
+		}
+	}
+
+	$cache->update_usergroups();
+
+	// Insert/update version into cache
+	$plugins = $cache->read('ougc_plugins');
+	if(!$plugins)
+	{
+		$plugins = array();
+	}
+
+	$info = ougc_signcontrol_info();
+
+	if(!isset($plugins['signcontrol']))
+	{
+		$plugins['signcontrol'] = $info['versioncode'];
+	}
+
+	/*~*~* RUN UPDATES START *~*~*/
+
+	/*~*~* RUN UPDATES END *~*~*/
+
+	$plugins['signcontrol'] = $info['versioncode'];
+	$cache->update('ougc_plugins', $plugins);
+}
+
+// _install() routine
 function ougc_signcontrol_install()
 {
 	global $db, $cache;
 	ougc_signcontrol_uninstall(false);
 
-	$db->add_column('usergroups', 'sc_sightml', "int(1) NOT NULL default '0'");
-	$db->add_column('usergroups', 'sc_sigmycode', "int(1) NOT NULL default '1'");
-	$db->add_column('usergroups', 'sc_sigsmilies', "int(1) NOT NULL default '1'");
-	$db->add_column('usergroups', 'sc_sigimgcode', "int(1) NOT NULL default '1'");
-	$db->add_column('usergroups', 'sc_sigcountmycode', "int(1) NOT NULL default '1'");
-	$db->add_column('usergroups', 'sc_siglength', "int(3) NOT NULL default '200'");
-	$db->add_column('usergroups', 'sc_maxsigimages', "int(2) NOT NULL default '2'");
-	$db->add_column('usergroups', 'sc_hidetoguest', "int(1) NOT NULL default '1'");
-	$db->add_column('usergroups', 'sc_maxsiglines', "int(2) NOT NULL default '0'");
-	$db->add_column('usergroups', 'sc_maximgsize', "varchar(7) NOT NULL DEFAULT ''");
+	$fields = ougc_signcontrol_fields();
+	foreach($fields as $field => $definition)
+	{
+		$db->add_column('usergroups', $field, $definition);
+	}
 
 	$cache->update_usergroups();
 }
 
-//Is this plugin installed?
+// _is_installed() routine
 function ougc_signcontrol_is_installed()
 {
 	global $db;
 
-	return ($db->field_exists('sc_hidetoguest', 'usergroups'));
+	$_is_installed = false;
+	$fields = ougc_signcontrol_fields();
+	foreach($fields as $field => $definition)
+	{
+		if($db->field_exists($field, 'usergroups'))
+		{
+			$_is_installed = true;
+			break;
+		}
+	}
+	return $_is_installed;
 }
 
-//Uninstall the plugin.
+// _uninstall() routine
 function ougc_signcontrol_uninstall($hard=true)
 {
 	global $db, $cache;
 
-	if($db->field_exists('sc_sightml', 'usergroups'))
+	$fields = ougc_signcontrol_fields();
+	foreach($fields as $field => $definition)
 	{
-		$db->drop_column('usergroups', 'sc_sightml');
-	}
-	if($db->field_exists('sc_sigmycode', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_sigmycode');
-	}
-	if($db->field_exists('sc_sigsmilies', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_sigsmilies');
-	}
-	if($db->field_exists('sc_sigimgcode', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_sigimgcode');
-	}
-	if($db->field_exists('sc_sigcountmycode', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_sigcountmycode');
-	}
-	if($db->field_exists('sc_siglength', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_siglength');
-	}
-	if($db->field_exists('sc_maxsigimages', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_maxsigimages');
-	}
-	if($db->field_exists('sc_hidetoguest', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_hidetoguest');
-	}
-	if($db->field_exists('sc_maxsiglines', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_maxsiglines');
-	}
-	if($db->field_exists('sc_maximgsize', 'usergroups'))
-	{
-		$db->drop_column('usergroups', 'sc_maximgsize');
+		if($db->field_exists($field, 'usergroups'))
+		{
+			$db->drop_column('usergroups', $field);
+		}
 	}
 
 	if($hard)
 	{
 		$cache->update_usergroups();
+	}
+
+	// Delete version from cache
+	$plugins = (array)$cache->read('ougc_plugins');
+
+	if(isset($plugins['signcontrol']))
+	{
+		unset($plugins['signcontrol']);
+	}
+
+	if(!empty($plugins))
+	{
+		$cache->update('ougc_plugins', $plugins);
+	}
+	else
+	{
+		$db->delete_query('datacache', 'title=\'ougc_plugins\'');
+		!is_object($cache->handler) or $cache->handler->delete('ougc_plugins');
+	}
+}
+
+function ougc_signcontrol_fields()
+{
+	return array(
+		'sc_sightml'		=> 'int(1) NOT NULL default \'0\'',
+		'sc_sigmycode'		=> 'int(1) NOT NULL default \'1\'',
+		'sc_sigsmilies'		=> 'int(1) NOT NULL default \'1\'',
+		'sc_sigimgcode'		=> 'int(1) NOT NULL default \'1\'',
+		'sc_sigcountmycode'	=> 'int(1) NOT NULL default \'1\'',
+		'sc_siglength'		=> 'int(3) NOT NULL default \'200\'',
+		'sc_maxsigimages'	=> 'int(2) NOT NULL default \'2\'',
+		'sc_hidetoguest'	=> 'int(1) NOT NULL default \'1\'',
+		'sc_maxsiglines'	=> 'int(2) NOT NULL default \'0\'',
+		'sc_maximgsize'		=> 'varchar(7) NOT NULL DEFAULT \'\'',
+	);
+}
+
+// Duplicate the current logged-in user signature field
+function ougc_signcontrol_init()
+{
+	global $db;
+
+	switch(THIS_SCRIPT)
+	{
+		case 'member.php':
+			control_object($db, '
+				function query($string, $hide_errors=0, $write_query=0)
+				{
+					if(!$write_query && strpos($string, \'ELECT u.*, f.*\') && strpos($string, \'users u\') && !strpos($string, \'signature_control\'))
+					{
+						$string = str_replace(\'u.*\', \'u.*, u.signature AS signature_control\', $string);
+					}
+					return parent::query($string, $hide_errors, $write_query);
+				}
+			');
+			break;
+		case 'showthread.php':
+			control_object($db, '
+				function query($string, $hide_errors=0, $write_query=0)
+				{
+					if(!$write_query && strpos($string, \'SELECT u.*, u.username AS userusername, p.*, f.*, eu.username AS editusername\') && !strpos($string, \'signature_control\'))
+					{
+						$string = str_replace(\'u.*\', \'u.*, u.signature AS signature_control\', $string);
+					}
+					return parent::query($string, $hide_errors, $write_query);
+				}
+			');
+			break;
+		case 'private.php':
+			control_object($db, '
+				function query($string, $hide_errors=0, $write_query=0)
+				{
+					if(!$write_query && strpos($string, \'u.*, f.*\') && !strpos($string, \'signature_control\'))
+					{
+						$string = str_replace(\'u.*\', \'u.*, u.signature AS signature_control\', $string);
+					}
+					return parent::query($string, $hide_errors, $write_query);
+				}
+			');
+			break;
 	}
 }
 
@@ -154,6 +248,15 @@ function ougc_signcontrol_permission()
 		global $form, $mybb;
 		$lang->load('ougc_signcontrol');
 
+		if(function_exists('getimagesize'))
+		{
+			$sc_maximgsize = $form->generate_text_box('sc_maximgsize', $mybb->input['sc_maximgsize'], array('id' => 'sc_maximgsize', 'class' => 'field50'));
+		}
+		else
+		{
+			$sc_maximgsize = '<br />&nbsp;&nbsp;&nbsp;<strong style="color: red;">'.$lang->ougc_signcontrol_sc_maximgsize_unavailable.'</strong>';
+		}
+
 		$sc_options = array(
 			$form->generate_check_box('sc_sightml', 1, $lang->ougc_signcontrol_sightml, array('checked' => $mybb->input['sc_sightml'])),
 			$form->generate_check_box('sc_sigmycode', 1, $lang->ougc_signcontrol_sigmycode, array('checked' => $mybb->input['sc_sigmycode'])),
@@ -162,7 +265,7 @@ function ougc_signcontrol_permission()
 			$form->generate_check_box('sc_sigcountmycode', 1, $lang->ougc_signcontrol_sigcountmycode, array('checked' => $mybb->input['sc_sigcountmycode'])),
 			$form->generate_check_box('sc_hidetoguest', 1, $lang->ougc_signcontrol_hidetoguest, array('checked' => $mybb->input['sc_hidetoguest'])),
 			"<br />{$lang->ougc_signcontrol_maxsiglines}<br /><small>{$lang->ougc_signcontrol_maxsiglines_desc}</small><br />".$form->generate_text_box('sc_maxsiglines', $mybb->input['sc_maxsiglines'], array('id' => 'sc_maxsiglines', 'class' => 'field50')),
-			"<br />{$lang->ougc_signcontrol_sc_maximgsize}<br /><small>{$lang->ougc_signcontrol_sc_maximgsize_desc}</small><br />".$form->generate_text_box('sc_maximgsize', $mybb->input['sc_maximgsize'], array('id' => 'sc_maximgsize', 'class' => 'field50')),
+			"<br />{$lang->ougc_signcontrol_sc_maximgsize}<br /><small>{$lang->ougc_signcontrol_sc_maximgsize_desc}</small><br />".$sc_maximgsize,
 			"<br />{$lang->ougc_signcontrol_siglength}<br /><small>{$lang->ougc_signcontrol_siglength_desc}</small><br />".$form->generate_text_box('sc_siglength', $mybb->input['sc_siglength'], array('id' => 'sc_siglength', 'class' => 'field50')),
 			"<br />{$lang->ougc_signcontrol_maxsigimages}<br /><small>{$lang->ougc_signcontrol_maxsigimages_desc}</small><br />".$form->generate_text_box('sc_maxsigimages', $mybb->input['sc_maxsigimages'], array('id' => 'sc_maxsigimages', 'class' => 'field50'))
 		);
@@ -177,15 +280,15 @@ function ougc_signcontrol_permission_commit()
 
 	$sc_maximgsize = implode('x', array_map('intval', explode('x', my_strtolower($mybb->input['sc_maximgsize']))));
 	$array_data = array(
-		'sc_sightml'		=>	intval($mybb->input['sc_sightml']),
-		'sc_sigmycode'		=>	intval($mybb->input['sc_sigmycode']),
-		'sc_sigsmilies'		=>	intval($mybb->input['sc_sigsmilies']),
-		'sc_sigimgcode'		=>	intval($mybb->input['sc_sigimgcode']),
-		'sc_sigcountmycode'	=>	intval($mybb->input['sc_sigcountmycode']),
-		'sc_hidetoguest'	=>	intval($mybb->input['sc_hidetoguest']),
-		'sc_siglength'		=>	intval($mybb->input['sc_siglength']),
-		'sc_maxsigimages'	=>	intval($mybb->input['sc_maxsigimages']),
-		'sc_maxsiglines'	=>	intval($mybb->input['sc_maxsiglines']),
+		'sc_sightml'		=>	(int)$mybb->input['sc_sightml'],
+		'sc_sigmycode'		=>	(int)$mybb->input['sc_sigmycode'],
+		'sc_sigsmilies'		=>	(int)$mybb->input['sc_sigsmilies'],
+		'sc_sigimgcode'		=>	(int)$mybb->input['sc_sigimgcode'],
+		'sc_sigcountmycode'	=>	(int)$mybb->input['sc_sigcountmycode'],
+		'sc_hidetoguest'	=>	(int)$mybb->input['sc_hidetoguest'],
+		'sc_siglength'		=>	(int)$mybb->input['sc_siglength'],
+		'sc_maxsigimages'	=>	(int)$mybb->input['sc_maxsigimages'],
+		'sc_maxsiglines'	=>	(int)$mybb->input['sc_maxsiglines'],
 		'sc_maximgsize'		=>	($sc_maximgsize == '0x0' ? '' : $sc_maximgsize)
 	);
 	$updated_group = array_merge($updated_group, $array_data);
@@ -201,10 +304,10 @@ function ougc_signcontrol_usercp()
 	$mybb->settings['sigsmilies'] = ($mybb->usergroup['sc_sigsmilies'] == 1 ? 1 : 0);
 	$mybb->settings['sigimgcode'] = ($mybb->usergroup['sc_sigimgcode'] == 1 ? 1 : 0);
 	$mybb->settings['sigcountmycode'] = ($mybb->usergroup['sc_sigcountmycode'] == 1 ? 1 : 0);
-	$mybb->settings['siglength'] = intval($mybb->usergroup['sc_siglength']);
-	$mybb->settings['maxsigimages'] = intval($mybb->usergroup['sc_maxsigimages']);
+	$mybb->settings['siglength'] = (int)$mybb->usergroup['sc_siglength'];
+	$mybb->settings['maxsigimages'] = (int)$mybb->usergroup['sc_maxsigimages'];
 
-	if(!($mybb->input['action'] == 'do_editsig' && $mybb->request_method == 'post' && $mybb->usergroup['sc_maxsiglines']))
+	if($mybb->input['action'] != 'do_editsig' || $mybb->request_method != 'post')
 	{
 		return;
 	}
@@ -212,10 +315,13 @@ function ougc_signcontrol_usercp()
 	global $lang, $error;
 	isset($lang->ougc_signcontrol_plugin) or $lang->load('ougc_signcontrol');
 
-	if(count(explode("\n", $mybb->input['signature'])) > $mybb->usergroup['sc_maxsiglines'])
+	if($mybb->usergroup['sc_maxsiglines'])
 	{
-		$error = inline_error($lang->sprintf($lang->ougc_signcontrol_sc_maxsigimages, my_number_format($mybb->usergroup['sc_maxsiglines'])));
-		return;
+		if(count(explode("\n", $mybb->input['signature'])) > $mybb->usergroup['sc_maxsiglines'])
+		{
+			$error = inline_error($lang->sprintf($lang->ougc_signcontrol_sc_maxsigimages, my_number_format($mybb->usergroup['sc_maxsiglines'])));
+			return;
+		}
 	}
 
 	if(!function_exists('getimagesize') || !$mybb->usergroup['sc_maximgsize'])
@@ -237,11 +343,11 @@ function ougc_signcontrol_usercp()
 
 	preg_match_all('#<img(.+?)src=\"(.+?)\"(.+?)/>#i', $parsed_sig, $matches);
 
-	$matches = array_unique($matches[2]);
+	$matches = array_unique((array)$matches[2]);
 
 	$invalid_found = $maxsized_found = false;
 	list($maxwidth, $maxheight) = explode('x', my_strtolower($mybb->usergroup['sc_maximgsize']));
-	foreach((array)$matches as $match)
+	foreach($matches as $match)
 	{
 		$imginfo = @getimagesize($match);
 		if(!$imginfo)
@@ -260,6 +366,7 @@ function ougc_signcontrol_usercp()
 				}
 			}
 		}
+
 		if(!$imginfo)
 		{
 			$invalid_found = true;
@@ -267,7 +374,6 @@ function ougc_signcontrol_usercp()
 		}
 
 		// Check that this is a valid image type
-		$invalid = false;
 		switch(my_strtolower($imginfo['mime']))
 		{
 			case 'image/gif':
@@ -278,21 +384,22 @@ function ougc_signcontrol_usercp()
 			case 'image/jpg':
 			case 'image/png':
 			case 'image/x-png':
-				$invalid = false;
+				$invalid_found = false;
 				break;
 			default:
-				$invalid = true;
+				$invalid_found = true;
 				break;
 		}
-		if($invalid)
+
+		if($invalid_found)
 		{
-			$invalid_found = true;
 			break;
 		}
 
 		if((int)$imginfo[0] > (int)$maxwidth || (int)$imginfo[1] > (int)$maxheight)
 		{
 			$maxsized_found = true;
+			break;
 		}
 	}
 
@@ -306,7 +413,7 @@ function ougc_signcontrol_usercp()
 	// A image was found, error for this user!
 	if($maxsized_found)
 	{
-		$error = inline_error($lang->sprintf($lang->ougc_signcontrol_sc_maxsized, get_friendly_size($mybb->usergroup['sc_maximgsize']*1024)));
+		$error = inline_error($lang->sprintf($lang->ougc_signcontrol_sc_maxsized, implode('x', array($maxwidth, $maxheight))));
 		return;
 	}
 }
@@ -314,7 +421,7 @@ function ougc_signcontrol_usercp()
 // Extend the DB class
 function ougc_signcontrol_profile_control()
 {
-	ougc_extend_object($GLOBALS['db'], '
+	control_object($GLOBALS['db'], '
 		function query($string, $hide_errors=0, $write_query=0)
 		{
 			if(!$write_query && strpos($string, \'ELECT * FROM '.TABLE_PREFIX.'users WHERE\') && !strpos($string, \'signature_control\'))
@@ -329,12 +436,14 @@ function ougc_signcontrol_profile_control()
 //Modify the settings for users profiles.
 function ougc_signcontrol_profile()
 {
-	global $mybb, $memprofile, $memperms, $signature, $parser, $templates;
+	global $memprofile;
 
 	if(!$memprofile['signature'])
 	{
 		return;
 	}
+
+	global $mybb, $memperms, $signature;
 
 	if(!$mybb->user['uid'] && $memperms['sc_hidetoguest'])
 	{
@@ -342,27 +451,36 @@ function ougc_signcontrol_profile()
 		return;
 	}
 
-	$sig_parser = array(
+	global $parser, $templates, $lang, $theme;
+
+	$memprofile['signature'] = $parser->parse_message($memprofile['signature_control'], array(
 		'allow_html' 		=> ($memperms['sc_sightml'] == 1 ? 1 : 0),
 		'allow_mycode' 		=> ($memperms['sc_sigmycode'] == 1 ? 1 : 0),
 		'allow_smilies'		=> ($memperms['sc_sigsmilies'] == 1 ? 1 : 0),
 		'allow_imgcode'		=> ($memperms['sc_sigimgcode'] == 1 ? 1 : 0),
 		'me_username' 		=> $memprofile['username'],
 		'filter_badwords' 	=> 1
-	);
-	$memprofile['signature'] = $parser->parse_message($memprofile['signature_control'], $sig_parser);
+	));
+
 	eval('$signature = "'.$templates->get('member_profile_signature').'";');
 }
 
 // Modify the settings for post.
 function ougc_signcontrol_postbit(&$post)
 {
-	global $mybb, $memperms, $signature, $parser, $templates;
+	/*global $announcementarray;
+
+	if(!empty($announcementarray))
+	{
+		_dump($announcementarray);
+	}*/
 
 	if(!$post['signature'])
 	{
 		return;
 	}
+
+	global $mybb;
 
 	$usergroup = usergroup_permissions($post['usergroup'].(!$post['additionalgroups'] ? '' : ','.$post['additionalgroups']));
 
@@ -372,100 +490,65 @@ function ougc_signcontrol_postbit(&$post)
 		return;
 	}
 
-	$sig_parser = array(
+	global $parser, $plugins;
+
+	$var = 'post';
+	/*if(THIS_SCRIPT == 'announcements.php')
+	{
+		$var = 'announcementarray';
+	}*/
+
+	$post['signature'] = $parser->parse_message(${$var}['signature_control'], array(
 		'allow_html' 		=> ($usergroup['sc_sightml'] == 1 ? 1 : 0),
 		'allow_mycode' 		=> ($usergroup['sc_sigmycode'] == 1 ? 1 : 0),
 		'allow_smilies'		=> ($usergroup['sc_sigsmilies'] == 1 ? 1 : 0),
 		'allow_imgcode'		=> ($usergroup['sc_sigimgcode'] == 1 ? 1 : 0),
 		'me_username' 		=> $post['username'],
 		'filter_badwords' 	=> 1
-	);
-
-	if(THIS_SCRIPT == 'private.php' && $mybb->input['action'] == 'read')
-	{
-		$post['signature'] = $parser->parse_message($GLOBALS['pm']['signature'], $sig_parser);
-	}
-	elseif(THIS_SCRIPT == 'announcements.php')
-	{
-		$post['signature'] = $parser->parse_message($GLOBALS['announcementarray']['signature'], $sig_parser);
-	}
-	else
-	{
-		$post['signature'] = $parser->parse_message($GLOBALS['post']['signature'], $sig_parser);
-	}
+	));
 }
 
-// This function is a mere duplicate of Zinga Burga's code used in the Bump plugin, he applied a license that allowed me to do whatever I want to it. And since control_object is under GPL, this is the most I can do.
-if(!function_exists('ougc_extend_object'))
+// control_object by Zinga Burga from MyBBHacks ( mybbhacks.zingaburga.com ), 1.62
+if(!function_exists('control_object'))
 {
-	function ougc_extend_object(&$object, $strign)
+	function control_object(&$obj, $code)
 	{
-		if(!is_object($object))
+		static $cnt = 0;
+		$newname = '_objcont_'.(++$cnt);
+		$objserial = serialize($obj);
+		$classname = get_class($obj);
+		$checkstr = 'O:'.strlen($classname).':"'.$classname.'":';
+		$checkstr_len = strlen($checkstr);
+		if(substr($objserial, 0, $checkstr_len) == $checkstr)
 		{
-			return false;
+			$vars = array();
+			// grab resources/object etc, stripping scope info from keys
+			foreach((array)$obj as $k => $v)
+			{
+				if($p = strrpos($k, "\0"))
+				{
+					$k = substr($k, $p+1);
+				}
+				$vars[$k] = $v;
+			}
+			if(!empty($vars))
+			{
+				$code .= '
+					function ___setvars(&$a) {
+						foreach($a as $k => &$v)
+							$this->$k = $v;
+					}
+				';
+			}
+			eval('class '.$newname.' extends '.$classname.' {'.$code.'}');
+			$obj = unserialize('O:'.strlen($newname).':"'.$newname.'":'.substr($objserial, $checkstr_len));
+			if(!empty($vars))
+			{
+				$obj->___setvars($vars);
+			}
 		}
-
-		static $ougc_extend_object_key = 0;
-		$key = 'ougcExtendObject'.(++$ougc_extend_object_key);
-		eval('class '.$key.' extends '.get_class($object).'
-			{
-				function '.$key.'(&$old)
-				{
-					$vars = get_object_vars($old);
-					foreach((array)$vars as $var => $val)
-					{
-						$this->$var = $val;
-					}
-				}
-
-				'./*str_replace("\\'", "'", addslashes($strign)*/$strign.'
-			}
-		');
-		$object = new $key($object);
+		// else not a valid object or PHP serialize has changed
 	}
 }
 
-// Run the hooks.
-if(!defined('IN_ADMINCP'))
-{
-	if(defined('THIS_SCRIPT') && THIS_SCRIPT == 'member.php')
-	{
-		ougc_extend_object($GLOBALS['db'], '
-			function query($string, $hide_errors=0, $write_query=0)
-			{
-				if(!$write_query && strpos($string, \'ELECT u.*, f.*\') && strpos($string, \'users u\') && !strpos($string, \'signature_control\'))
-				{
-					$string = str_replace(\'u.*\', \'u.*, u.signature AS signature_control\', $string);
-				}
-				return parent::query($string, $hide_errors, $write_query);
-			}
-		');
-	}
-	/*switch(THIS_SCRIPT)
-	{
-		case 'showthread.php':
-			ougc_extend_object($GLOBALS['db'], '
-				function query($string, $hide_errors=0, $write_query=0)
-				{
-					if(!$write_query && strpos($string, \'SELECT u.*, u.username AS userusername, p.*, f.*, eu.username AS editusername\') && !strpos($string, \'signature_control\'))
-					{
-						$string = str_replace(\'u.*\', \'u.*, u.signature AS signature_control\', $string);
-					}
-					return parent::query($string, $hide_errors, $write_query);
-				}
-			');
-			break;
-		case 'private.php':
-			ougc_extend_object($GLOBALS['db'], '
-				function query($string, $hide_errors=0, $write_query=0)
-				{
-					if(!$write_query && strpos($string, \'u.*, f.*\') && !strpos($string, \'signature_control\'))
-					{
-						$string = str_replace(\'u.*\', \'u.*, u.signature AS signature_control\', $string);
-					}
-					return parent::query($string, $hide_errors, $write_query);
-				}
-			');
-			break;
-	}*/
-}
+ougc_signcontrol_init();
