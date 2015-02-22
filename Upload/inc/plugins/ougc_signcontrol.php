@@ -479,8 +479,6 @@ function ougc_signcontrol_postbit(&$post)
 	eval('$post[\'signature\'] = "'.$templates->get('postbit_signature').'";');
 
 	$cached_signs[$post['uid']] = $post['signature'];
-
-	return $post;
 }
 
 // control_object by Zinga Burga from MyBBHacks ( mybbhacks.zingaburga.com ), 1.62
