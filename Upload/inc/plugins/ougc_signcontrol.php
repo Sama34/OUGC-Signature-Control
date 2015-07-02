@@ -61,7 +61,8 @@ function ougc_signcontrol_info()
 		'authorsite'	=> 'http://omarg.me',
 		'version'		=> '1.8',
 		'versioncode'	=> 1800,
-		'compatibility'	=> '18*'
+		'compatibility'	=> '18*',
+		'codename'			=> 'ougc_signcontrol',
 	);
 }
 
@@ -182,7 +183,7 @@ function ougc_signcontrol_permission()
 {
 	global $run_module, $form_container, $lang;
 
-	if($run_module == 'user' && $form_container->_title == $lang->users_permissions)
+	if($run_module == 'user' && !empty($form_container->_title) && $form_container->_title == $lang->users_permissions)
 	{
 		global $form, $mybb;
 		isset($lang->setting_group_ougc_signcontrol) or $lang->load('ougc_signcontrol');
@@ -418,9 +419,9 @@ function ougc_signcontrol_profile()
 	$memprofile['signature'] = $parser->parse_message($memprofile['signature_control'], $parser_options);
 	eval('$signature = "'.$templates->get('member_profile_signature').'";');
 
-	if(function_exists('ougc_signatureimage_profile_parse'))
+	if(function_exists('ougc_signatureimage_parse'))
 	{
-		ougc_signatureimage_profile_parse($signature, $memprofile);
+		ougc_signatureimage_parse($signature, $memprofile);
 	}
 }
 
@@ -483,9 +484,9 @@ function ougc_signcontrol_postbit(&$post)
 	$post['signature'] = $parser->parse_message(${$var}['signature_control'], $parser_options);
 	eval('$post[\'signature\'] = "'.$templates->get('postbit_signature').'";');
 
-	if(function_exists('ougc_signatureimage_profile_parse'))
+	if(function_exists('ougc_signatureimage_parse'))
 	{
-		ougc_signatureimage_profile_parse($post['signature'], $post);
+		ougc_signatureimage_parse($post['signature'], $post);
 	}
 
 	$cached_signs[$post['uid']] = $post['signature'];
