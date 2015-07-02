@@ -430,9 +430,10 @@ function ougc_signcontrol_postbit(&$post)
 {
 	static $cached_signs = array();
 
-	if($cached_signs[$post['uid']])
+	if(isset($cached_signs[$post['uid']]))
 	{
 		$post['signature'] = $cached_signs[$post['uid']];
+		return;
 	}
 
 	$cached_signs[$post['uid']] = '';
@@ -470,16 +471,22 @@ function ougc_signcontrol_postbit(&$post)
 		'filter_badwords' 	=> 1
 	);
 
-	static $var = '';
-
-	if(!$var)
+	switch($GLOBALS['plugins']->current_hook)
 	{
-		global $plugins;
-
-		$var = ($plugins->current_hook == 'postbit_pm' ? 'pm' : ($plugins->current_hook == 'postbit_announcement' ? 'announcementarray' : 'post'));
+		case 'postbit_pm':
+			global $pm;
+			$var = 'pm';
+			break;
+		case 'postbit_announcement':
+			global $announcementarray;
+			$var = 'announcementarray';
+			break;
+		default:
+			$var = 'post';
+			break;
 	}
 
-	global ${$var}, $templates;
+	global $templates;
 
 	$post['signature'] = $parser->parse_message(${$var}['signature_control'], $parser_options);
 	eval('$post[\'signature\'] = "'.$templates->get('postbit_signature').'";');
